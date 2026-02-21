@@ -88,11 +88,11 @@ if st.button("ANALİZİ BAŞLAT ✨"):
                 
                 results.append({
                     "Platform": "Trendyol", "Marka": row.get('Marka','-'), "Kod": row.get('Tedarikçi Stok Kodu','-'),
-                    "Ürün": row.get('Ürün Adı','-'), "Desi": desi, "Satış Fiyatı": satis, "Alış Maliyeti": alis,
-                    "Komisyon TL": round(kom_tl, 2), "Gidiş Kargo": round(kargo_tl, 2), "Sabit Gider": tr_sabit,
-                    "Tahsilat Bedeli": 0.0, "İade Karşılığı (TL)": round(iade_risk_tl, 2),
-                    "TOPLAM MALİYET": round(toplam_maliyet, 2), "NET KAR": round(net_kar, 2),
-                    "Kar Marjı %": round((net_kar/satis)*100, 2) if satis > 0 else 0,
+                    "Ürün": row.get('Ürün Adı','-'), "Desi": desi, "Komisyon %": round(kom_oran, 2), 
+                    "Gidiş Kargo": round(kargo_tl, 2), "Satış Fiyatı": satis, "Alış Maliyeti": alis,
+                    "Komisyon TL": round(kom_tl, 2), "Sabit Gider": tr_sabit, "Tahsilat Bedeli": 0.0,
+                    "İade Karşılığı (TL)": round(iade_risk_tl, 2), "TOPLAM MALİYET": round(toplam_maliyet, 2),
+                    "NET KAR": round(net_kar, 2), "Kar Marjı %": round((net_kar/satis)*100, 2) if satis > 0 else 0,
                     "ROI %": round((net_kar/toplam_maliyet)*100, 2) if toplam_maliyet > 0 else 0
                 })
 
@@ -104,24 +104,27 @@ if st.button("ANALİZİ BAŞLAT ✨"):
             if not m.empty:
                 alis = to_float(m.iloc[0].get('Alış Fiyatı', 0))
                 satis = to_float(row.get('Fiyat', 0))
-                kom_oran = to_float(row.get('Komisyon Oranı', 0))
-                desi = to_float(m.iloc[0].get('Desi', 0))
+                kom_ham_oran = to_float(row.get('Komisyon Oranı', 0))
                 
+                # HB %20 KDV Dahil Komisyon Oranı ve TL Hesabı
+                efektif_kom_oran = kom_ham_oran * 1.20
+                kom_toplam_tl = satis * (efektif_kom_oran / 100)
+                
+                desi = to_float(m.iloc[0].get('Desi', 0))
                 kargo_tl = kargo_hesapla(desi, df_kargo)
-                kom_kdvli_tl = (satis * (kom_oran / 100)) * 1.20 
                 tahsilat_tl = satis * hb_tahsilat_oran
                 iade_risk_tl = (kargo_tl * 2) * (iade_orani / 100) 
                 
-                toplam_maliyet = alis + kom_kdvli_tl + tahsilat_tl + kargo_tl + hb_sabit + iade_risk_tl
+                toplam_maliyet = alis + kom_toplam_tl + tahsilat_tl + kargo_tl + hb_sabit + iade_risk_tl
                 net_kar = satis - toplam_maliyet
                 
                 results.append({
                     "Platform": "Hepsiburada", "Marka": row.get('Marka','-'), "Kod": row.get('Satıcı Stok Kodu','-'),
-                    "Ürün": row.get('Ürün Adı','-'), "Desi": desi, "Satış Fiyatı": satis, "Alış Maliyeti": alis,
-                    "Komisyon TL": round(kom_kdvli_tl, 2), "Gidiş Kargo": round(kargo_tl, 2), "Sabit Gider": hb_sabit,
-                    "Tahsilat Bedeli": round(tahsilat_tl, 2), "İade Karşılığı (TL)": round(iade_risk_tl, 2),
-                    "TOPLAM MALİYET": round(toplam_maliyet, 2), "NET KAR": round(net_kar, 2),
-                    "Kar Marjı %": round((net_kar/satis)*100, 2) if satis > 0 else 0,
+                    "Ürün": row.get('Ürün Adı','-'), "Desi": desi, "Komisyon %": round(efektif_kom_oran, 2),
+                    "Gidiş Kargo": round(kargo_tl, 2), "Satış Fiyatı": satis, "Alış Maliyeti": alis,
+                    "Komisyon TL": round(kom_toplam_tl, 2), "Sabit Gider": hb_sabit, "Tahsilat Bedeli": round(tahsilat_tl, 2),
+                    "İade Karşılığı (TL)": round(iade_risk_tl, 2), "TOPLAM MALİYET": round(toplam_maliyet, 2),
+                    "NET KAR": round(net_kar, 2), "Kar Marjı %": round((net_kar/satis)*100, 2) if satis > 0 else 0,
                     "ROI %": round((net_kar/toplam_maliyet)*100, 2) if toplam_maliyet > 0 else 0
                 })
 
