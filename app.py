@@ -3,7 +3,7 @@ import pandas as pd
 import io
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Pazaryeri Strateji Merkezi", layout="wide")
+st.set_page_config(page_title="Pazaryeri Kar ve Stok Yönetimi", layout="wide")
 
 # --- MODERN TASARIM (CSS) ---
 st.markdown("""
@@ -15,7 +15,8 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🚀 Pazaryeri Kar & Kampanya Yönetim Merkezi")
+st.title("🏆 Pazaryeri Strateji & Kar Yönetim Merkezi")
+st.markdown("---")
 
 # --- 1. HESAP MOTORU FONKSİYONLARI ---
 def to_float(val):
@@ -53,20 +54,15 @@ with st.sidebar:
     hb_tahsilat_oran = st.number_input("HB Tahsilat Bedeli (%)", value=0.8) / 100
     
     st.divider()
-    st.subheader("🔄 İade & Reklam")
+    st.subheader("🔄 İade Risk Ayarı")
     iade_orani = st.slider("Tahmini İade Oranı (%)", 0, 20, 5)
-    reklam_orani = st.slider("Tahmini Reklam Gideri (ACOS %)", 0, 30, 10)
 
     st.divider()
-    st.subheader("📦 Modüller")
-    stok_goster = st.toggle("Stok Adetlerini Göster", value=False)
+    st.subheader("📦 Stok Modülü")
+    stok_goster = st.toggle("Stok Adetlerini Göster", value=False) # AÇ/KAPA ÖZELLİĞİ
 
-# --- 3. KAMPANYA SİMÜLATÖRÜ (ANA EKRAN ÜSTÜ) ---
-st.info("💡 Aşağıdaki slider'ı kullanarak fiyatlarda bir indirim yaparsan karlılığının nasıl etkileneceğini canlı görebilirsin.")
-sim_indirim = st.slider("Simüle Edilecek Kampanya İndirimi (%)", 0, 50, 0)
-
-# --- 4. ANA ANALİZ MOTORU ---
-if st.button("ANALİZİ BAŞLAT ✨"):
+# --- 3. ANA ANALİZ MOTORU ---
+if st.button("ANALİZİ BAŞLAT VE STRATEJİ ÜRET ✨"):
     if not (tr_file and hb_file and maliyet_file and kargo_file):
         st.error("Lütfen tüm dosyaları yükleyin!")
     else:
@@ -84,30 +80,25 @@ if st.button("ANALİZİ BAŞLAT ✨"):
                            (df_maliyet['Ürün Adı'].astype(str) == str(row.get('Ürün Adı')))]
             if not m.empty:
                 alis = to_float(m.iloc[0].get('Alış Fiyatı', 0))
-                ana_satis = to_float(row.get("Trendyol'da Satılacak Fiyat (KDV Dahil)", 0))
-                
-                # Simülasyon Uygula
-                satis = ana_satis * (1 - sim_indirim / 100)
-                
+                satis = to_float(row.get("Trendyol'da Satılacak Fiyat (KDV Dahil)", 0))
                 kom_oran = to_float(row.get('Komisyon Oranı', 0))
                 desi = to_float(row.get('Desi', 0))
                 if desi <= 0: desi = to_float(m.iloc[0].get('Desi', 0))
                 kargo = kargo_hesapla(desi, df_kargo)
                 kom_tl = satis * (kom_oran / 100)
                 iade_risk = kargo * (iade_orani / 100)
-                reklam_gideri = satis * (reklam_orani / 100)
-                
                 toplam_maliyet = alis + kom_tl + kargo + tr_sabit + iade_risk
-                net_kar = satis - toplam_maliyet - reklam_gideri # Reklam dahil net kar
+                net_kar = satis - toplam_maliyet
                 
-                res = {"Platform": "Trendyol", "Marka": row.get('Marka','-'), "Kod": row.get('Tedarikçi Stok Kodu','-'), "Ürün": row.get('Ürün Adı','-')}
+                res = {
+                    "Platform": "Trendyol", "Marka": row.get('Marka','-'), "Kod": row.get('Tedarikçi Stok Kodu','-'), "Ürün": row.get('Ürün Adı','-')
+                }
                 if stok_goster: res["Stok"] = int(to_float(row.get('Ürün Stok Adedi', 0)))
                 
                 res.update({
-                    "Satış Fiyatı": round(satis, 2), "Alış Maliyeti": alis, "Komisyon %": round(kom_oran, 2), "Komisyon TL": round(kom_tl, 2),
+                    "Satış Fiyatı": satis, "Alış Maliyeti": alis, "Komisyon %": round(kom_oran, 2), "Komisyon TL": round(kom_tl, 2),
                     "Tahsilat Bedeli (TL)": 0.0, "Desi": desi, "Gidiş Kargo": round(kargo, 2), "Sabit Gider": tr_sabit,
-                    "İade Karşılığı (TL)": round(iade_risk, 2), "TOPLAM MALİYET": round(toplam_maliyet, 2), "NET KAR": round(net_kar, 2), "Kar Marjı %": round((net_kar/satis)*100, 2) if satis > 0 else 0,
-                    "Reklam Gideri (TL)": round(reklam_gideri, 2)
+                    "İade Karşılığı (TL)": round(iade_risk, 2), "TOPLAM MALİYET": round(toplam_maliyet, 2), "NET KAR": round(net_kar, 2), "Kar Marjı %": round((net_kar/satis)*100, 2) if satis > 0 else 0
                 })
                 results.append(res)
 
@@ -118,11 +109,7 @@ if st.button("ANALİZİ BAŞLAT ✨"):
                            (df_maliyet['Ürün Adı'].astype(str) == str(row.get('Ürün Adı')))]
             if not m.empty:
                 alis = to_float(m.iloc[0].get('Alış Fiyatı', 0))
-                ana_satis = to_float(row.get('Fiyat', 0))
-                
-                # Simülasyon Uygula
-                satis = ana_satis * (1 - sim_indirim / 100)
-                
+                satis = to_float(row.get('Fiyat', 0))
                 kom_ham_oran = to_float(row.get('Komisyon Oranı', 0))
                 kom_kdvli_oran = kom_ham_oran * 1.20
                 kom_tl = satis * (kom_kdvli_oran / 100)
@@ -130,46 +117,48 @@ if st.button("ANALİZİ BAŞLAT ✨"):
                 desi = to_float(m.iloc[0].get('Desi', 0))
                 kargo = kargo_hesapla(desi, df_kargo)
                 iade_risk = (kargo * 2) * (iade_orani / 100)
-                reklam_gideri = satis * (reklam_orani / 100)
-                
                 toplam_maliyet = alis + kom_tl + tahsilat + kargo + hb_sabit + iade_risk
-                net_kar = satis - toplam_maliyet - reklam_gideri
+                net_kar = satis - toplam_maliyet
                 
-                res = {"Platform": "Hepsiburada", "Marka": row.get('Marka','-'), "Kod": row.get('Satıcı Stok Kodu','-'), "Ürün": row.get('Ürün Adı','-')}
+                res = {
+                    "Platform": "Hepsiburada", "Marka": row.get('Marka','-'), "Kod": row.get('Satıcı Stok Kodu','-'), "Ürün": row.get('Ürün Adı','-')
+                }
                 if stok_goster: res["Stok"] = int(to_float(row.get('Stok', 0)))
                 
                 res.update({
-                    "Satış Fiyatı": round(satis, 2), "Alış Maliyeti": alis, "Komisyon %": round(kom_kdvli_oran, 2), "Komisyon TL": round(kom_tl, 2),
+                    "Satış Fiyatı": satis, "Alış Maliyeti": alis, "Komisyon %": round(kom_kdvli_oran, 2), "Komisyon TL": round(kom_tl, 2),
                     "Tahsilat Bedeli (TL)": round(tahsilat, 2), "Desi": desi, "Gidiş Kargo": round(kargo, 2), "Sabit Gider": hb_sabit,
-                    "İade Karşılığı (TL)": round(iade_risk, 2), "TOPLAM MALİYET": round(toplam_maliyet, 2), "NET KAR": round(net_kar, 2), "Kar Marjı %": round((net_kar/satis)*100, 2) if satis > 0 else 0,
-                    "Reklam Gideri (TL)": round(reklam_gideri, 2)
+                    "İade Karşılığı (TL)": round(iade_risk, 2), "TOPLAM MALİYET": round(toplam_maliyet, 2), "NET KAR": round(net_kar, 2), "Kar Marjı %": round((net_kar/satis)*100, 2) if satis > 0 else 0
                 })
                 results.append(res)
 
         if results:
             final_df = pd.DataFrame(results)
             
-            # --- 5. DASHBOARD METRİKLERİ ---
-            st.subheader(f"📊 Analiz Sonuçları ({sim_indirim}% İndirim Simülasyonu)")
+            # --- 4. DASHBOARD ---
+            st.subheader("📊 Genel Durum Paneli")
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("💰 Toplam Net Kar", f"{final_df['NET KAR'].sum():,.2f} TL")
             c2.metric("📈 Ortalama Marj", f"%{final_df['Kar Marjı %'].mean():.2f}")
-            c3.metric("📢 Reklam Gideri", f"{final_df['Reklam Gideri (TL)'].sum():,.2f} TL")
-            c4.metric("🚨 Kritik Ürün", len(final_df[final_df['Kar Marjı %'] < 10]))
+            c3.metric("🚨 Kritik Ürün (Marj <%10)", len(final_df[final_df['Kar Marjı %'] < 10]))
+            c4.metric("📦 Toplam Satış Hacmi", f"{final_df['Satış Fiyatı'].sum():,.0f} TL")
 
-            # --- 6. AI STRATEJİ DANIŞMANI ---
+            # --- 5. AI STRATEJİ DANIŞMANI ---
             st.divider()
-            with st.expander("🤖 Kampanya ve Reklam Önerilerini Oku", expanded=True):
+            st.subheader("🤖 Yönetici Özeti & Öneriler")
+            with st.container():
                 col_a, col_b = st.columns(2)
                 with col_a:
-                    st.write(f"🔹 **Reklam Etkisi:** Reklama satışlarının %{reklam_orani}'sini ayırdığında toplam karın {final_df['NET KAR'].sum():,.2f} TL oluyor.")
-                    if sim_indirim > 0:
-                        st.warning(f"🔹 **İndirim Analizi:** %{sim_indirim} indirim yaptığında marjın %{final_df['Kar Marjı %'].mean():.2f} seviyesine geriledi.")
+                    best_brand = final_df.groupby('Marka')['Kar Marjı %'].mean().idxmax()
+                    st.success(f"🌟 **Marka Analizi:** {best_brand} markası şu an en verimli markan.")
+                    if stok_goster:
+                        low_stock = final_df[final_df['Stok'] < 5]
+                        if not low_stock.empty:
+                            st.warning(f"📉 **Stok Uyarısı:** {len(low_stock)} ürünün stoğu kritik seviyede (5 adet altı)!")
                 with col_b:
-                    high_profit = final_df[final_df['Kar Marjı %'] > 20]
-                    st.success(f"🌟 **Fırsat:** Marjı %20'nin üzerinde olan {len(high_profit)} ürünün var. Bunlarda indirimi artırıp hacim kazanabilirsin.")
+                    st.info("💡 **Tavsiye:** Karlılığı yüksek ürünlerde 'Sepette İndirim' kampanyası yaparak hacmi büyütebilirsin.")
 
-            # --- 7. ANA TABLO (KIRMIZI ÇİZGİ SIRALAMASI KORUNDU) ---
+            # --- 6. ANA TABLO ---
             st.divider()
             st.subheader("📋 Detaylı Ürün Analiz Tablosu")
             st.dataframe(final_df.sort_values('NET KAR', ascending=False), use_container_width=True)
@@ -177,4 +166,4 @@ if st.button("ANALİZİ BAŞLAT ✨"):
             # Excel İndirme
             output = io.BytesIO()
             final_df.to_excel(output, index=False)
-            st.download_button("📥 Stratejik Raporu İndir", output.getvalue(), "Pazaryeri_Stratejik_Rapor.xlsx")
+            st.download_button("📥 Raporu İndir (Excel)", output.getvalue(), "Pazaryeri_Analiz_Raporu.xlsx")
