@@ -18,24 +18,21 @@ def kargo_hesapla(desi, kargo_df):
     try:
         desi_val = to_float(desi)
         if desi_val <= 0: return 0.0
-        # Kargo tablosu temizliği
         kargo_df.columns = kargo_df.columns.str.strip()
         kargo_df['DESİ'] = kargo_df['DESİ'].apply(to_float)
         
         if desi_val <= 30:
-            # Ürün desisinden büyük veya eşit olan en yakın desi basamağını bul (Üst desiye yuvarlama)
             matched = kargo_df[kargo_df['DESİ'] >= desi_val].sort_values('DESİ')
             if not matched.empty:
                 return float(matched.iloc[0]['Fiyat'])
             else:
-                return 447.06 # Eğer 30'a kadar bulunamazsa 30 desi fiyatı
+                return 447.06
         else:
-            # 30+ desi kuralı: 30 Desi Fiyatı + (Ek Desi * 14.87)
             return 447.06 + ((desi_val - 30) * 14.87)
     except:
         return 0.0
 
-# --- YÜKLEME ALANI (SOL PANEL) ---
+# --- YÜKLEME ALANI ---
 with st.sidebar:
     st.header("📂 Dosyaları Yükle")
     tr_file = st.file_uploader("1. Trendyol Ürün Listesi", type=['xlsx'])
@@ -48,12 +45,11 @@ with st.sidebar:
     tr_sabit = st.number_input("Trendyol Sabit Gider (TL)", value=15.0)
     hb_sabit = st.number_input("HB Sabit Gider (TL)", value=15.0)
     hb_tahsilat_oran = st.number_input("HB Tahsilat Bedeli (%)", value=0.8) / 100
-    hb_komisyon_kdv = 1.20 # Hepsiburada Komisyonu için %20 KDV çarpanı
 
 # --- HESAPLAMA MOTORU ---
 if st.button("ANALİZİ BAŞLAT ✨"):
     if not (tr_file and hb_file and maliyet_file and kargo_file):
-        st.error("Lütfen dört Excel dosyasını da yükleyin!")
+        st.error("Lütfen tüm Excel dosyalarını yükleyin!")
     else:
         df_tr = pd.read_excel(tr_file); df_tr.columns = df_tr.columns.str.strip()
         df_hb = pd.read_excel(hb_file); df_hb.columns = df_hb.columns.str.strip()
@@ -71,7 +67,6 @@ if st.button("ANALİZİ BAŞLAT ✨"):
                 alis = to_float(m.iloc[0].get('Alış Fiyatı', 0))
                 satis = to_float(row.get("Trendyol'da Satılacak Fiyat (KDV Dahil)", 0))
                 kom_oran = to_float(row.get('Komisyon Oranı', 0))
-                # Desi önceliği: Önce Trendyol raporu, yoksa maliyet listesi
                 desi = to_float(row.get('Desi', 0))
                 if desi <= 0: desi = to_float(m.iloc[0].get('Desi', 0))
                 
@@ -82,7 +77,7 @@ if st.button("ANALİZİ BAŞLAT ✨"):
                 results.append({
                     "Platform": "Trendyol", "Marka": row.get('Marka','-'), "Kod": row.get('Tedarikçi Stok Kodu','-'),
                     "Ürün": row.get('Ürün Adı','-'), "Desi": desi, "Satış Fiyatı": satis, "Alış Maliyeti": alis, 
-                    "Komisyon Oran %": kom_oran, "Komisyon TL": round(kom_tl, 2), "Komisyon KDV": 0,
+                    "Komisyon Oran %": kom_oran, "Komisyon TL": round(kom_tl, 2),
                     "Tahsilat Bedeli": 0, "Kargo": round(kargo, 2), "Sabit Gider": tr_sabit,
                     "NET KAR": round(net_kar, 2), "Kar Marjı %": round((net_kar/satis)*100, 2) if satis>0 else 0
                 })
@@ -95,36 +90,32 @@ if st.button("ANALİZİ BAŞLAT ✨"):
             if not m.empty:
                 alis = to_float(m.iloc[0].get('Alış Fiyatı', 0))
                 satis = to_float(row.get('Fiyat', 0))
-                kom_oran = to_float(row.get('Komisyon Oranı', 0))
-                desi = to_float(m.iloc[0].get('Desi', 0)) # HB için maliyet listesindeki desiyi al
+                kom_ham_oran = to_float(row.get('Komisyon Oranı', 0))
                 
+                # HEPSİBURADA KDV DAHİL KOMİSYON HESABI (%12 -> %14.40)
+                efektif_kom_oran = kom_ham_oran * 1.20 
+                kom_toplam_tl = satis * (efektif_kom_oran / 100)
+                
+                desi = to_float(m.iloc[0].get('Desi', 0))
                 kargo = kargo_hesapla(desi, df_kargo)
-                
-                # HB ÖZEL HESAPLAMA
-                kom_ham = satis * (kom_oran / 100)
-                kom_kdv_tutari = kom_ham * 0.20 # Komisyonun %20 KDV'si
-                kom_toplam = kom_ham + kom_kdv_tutari # KDV dahil toplam komisyon
-                
                 tahsilat = satis * hb_tahsilat_oran
-                net_kar = satis - (alis + kom_toplam + tahsilat + kargo + hb_sabit)
+                
+                net_kar = satis - (alis + kom_toplam_tl + tahsilat + kargo + hb_sabit)
                 
                 results.append({
                     "Platform": "Hepsiburada", "Marka": row.get('Marka','-'), "Kod": row.get('Satıcı Stok Kodu','-'),
                     "Ürün": row.get('Ürün Adı','-'), "Desi": desi, "Satış Fiyatı": satis, "Alış Maliyeti": alis, 
-                    "Komisyon Oran %": kom_oran, "Komisyon TL": round(kom_ham, 2), "Komisyon KDV": round(kom_kdv_tutari, 2),
+                    "Komisyon Oran % (KDV Dahil)": round(efektif_kom_oran, 2), 
+                    "Komisyon Toplam TL": round(kom_toplam_tl, 2),
                     "Tahsilat Bedeli": round(tahsilat, 2), "Kargo": round(kargo, 2), "Sabit Gider": hb_sabit,
                     "NET KAR": round(net_kar, 2), "Kar Marjı %": round((net_kar/satis)*100, 2) if satis>0 else 0
                 })
 
         if results:
             final_df = pd.DataFrame(results)
-            st.success("✅ Analiz Başarıyla Tamamlandı!")
-            
-            # Tablo Görünümü
+            st.success("✅ Analiz Tamamlandı! Hepsiburada Komisyonuna %20 KDV eklendi.")
             st.dataframe(final_df, use_container_width=True)
-            
-            # Excel İndirme
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                final_df.to_excel(writer, index=False, sheet_name='Detaylı Kar Analizi')
-            st.download_button("📥 Tüm Sonuçları Excel Olarak İndir", output.getvalue(), "Pazaryeri_Kar_Analizi.xlsx")
+                final_df.to_excel(writer, index=False)
+            st.download_button("📥 Excel İndir", output.getvalue(), "Pazaryeri_Analiz.xlsx")
