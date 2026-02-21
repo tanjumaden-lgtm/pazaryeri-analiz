@@ -49,7 +49,7 @@ with st.sidebar:
 # --- HESAPLAMA MOTORU ---
 if st.button("ANALİZİ BAŞLAT ✨"):
     if not (tr_file and hb_file and maliyet_file and kargo_file):
-        st.error("Lütfen tüm Excel dosyalarını yükleyin!")
+        st.error("Lütfen dört Excel dosyasını da yükleyin!")
     else:
         df_tr = pd.read_excel(tr_file); df_tr.columns = df_tr.columns.str.strip()
         df_hb = pd.read_excel(hb_file); df_hb.columns = df_hb.columns.str.strip()
@@ -75,11 +75,20 @@ if st.button("ANALİZİ BAŞLAT ✨"):
                 net_kar = satis - (alis + kom_tl + kargo + tr_sabit)
                 
                 results.append({
-                    "Platform": "Trendyol", "Marka": row.get('Marka','-'), "Kod": row.get('Tedarikçi Stok Kodu','-'),
-                    "Ürün": row.get('Ürün Adı','-'), "Desi": desi, "Satış Fiyatı": satis, "Alış Maliyeti": alis, 
-                    "Komisyon Oran %": kom_oran, "Komisyon TL": round(kom_tl, 2),
-                    "Tahsilat Bedeli": 0, "Kargo": round(kargo, 2), "Sabit Gider": tr_sabit,
-                    "NET KAR": round(net_kar, 2), "Kar Marjı %": round((net_kar/satis)*100, 2) if satis>0 else 0
+                    "Platform": "Trendyol",
+                    "Marka": row.get('Marka','-'),
+                    "Kod": row.get('Tedarikçi Stok Kodu','-'),
+                    "Ürün": row.get('Ürün Adı','-'),
+                    "Desi": desi,
+                    "Satış Fiyatı": satis,
+                    "Alış Maliyeti": alis,
+                    "Komisyon Oran %": round(kom_oran, 2),
+                    "Komisyon TL": round(kom_tl, 2),
+                    "Kargo (TL)": round(kargo, 2),
+                    "Tahsilat Bedeli (TL)": 0.0,
+                    "Sabit Gider (TL)": tr_sabit,
+                    "NET KAR": round(net_kar, 2),
+                    "Kar Marjı %": round((net_kar/satis)*100, 2) if satis>0 else 0
                 })
 
         # --- HEPSİBURADA İŞLEME ---
@@ -92,9 +101,9 @@ if st.button("ANALİZİ BAŞLAT ✨"):
                 satis = to_float(row.get('Fiyat', 0))
                 kom_ham_oran = to_float(row.get('Komisyon Oranı', 0))
                 
-                # HEPSİBURADA KDV DAHİL KOMİSYON HESABI (%12 -> %14.40)
-                efektif_kom_oran = kom_ham_oran * 1.20 
-                kom_toplam_tl = satis * (efektif_kom_oran / 100)
+                # HB %20 KDV DAHİL ORAN (Örn: 12 x 1.2 = 14.4)
+                kom_kdv_dahil_oran = kom_ham_oran * 1.20
+                kom_toplam_tl = satis * (kom_kdv_dahil_oran / 100)
                 
                 desi = to_float(m.iloc[0].get('Desi', 0))
                 kargo = kargo_hesapla(desi, df_kargo)
@@ -103,19 +112,31 @@ if st.button("ANALİZİ BAŞLAT ✨"):
                 net_kar = satis - (alis + kom_toplam_tl + tahsilat + kargo + hb_sabit)
                 
                 results.append({
-                    "Platform": "Hepsiburada", "Marka": row.get('Marka','-'), "Kod": row.get('Satıcı Stok Kodu','-'),
-                    "Ürün": row.get('Ürün Adı','-'), "Desi": desi, "Satış Fiyatı": satis, "Alış Maliyeti": alis, 
-                    "Komisyon Oran % (KDV Dahil)": round(efektif_kom_oran, 2), 
-                    "Komisyon Toplam TL": round(kom_toplam_tl, 2),
-                    "Tahsilat Bedeli": round(tahsilat, 2), "Kargo": round(kargo, 2), "Sabit Gider": hb_sabit,
-                    "NET KAR": round(net_kar, 2), "Kar Marjı %": round((net_kar/satis)*100, 2) if satis>0 else 0
+                    "Platform": "Hepsiburada",
+                    "Marka": row.get('Marka','-'),
+                    "Kod": row.get('Satıcı Stok Kodu','-'),
+                    "Ürün": row.get('Ürün Adı','-'),
+                    "Desi": desi,
+                    "Satış Fiyatı": satis,
+                    "Alış Maliyeti": alis,
+                    "Komisyon Oran %": round(kom_kdv_dahil_oran, 2), # %14.40 yazar
+                    "Komisyon TL": round(kom_toplam_tl, 2),
+                    "Kargo (TL)": round(kargo, 2),
+                    "Tahsilat Bedeli (TL)": round(tahsilat, 2),
+                    "Sabit Gider (TL)": hb_sabit,
+                    "NET KAR": round(net_kar, 2),
+                    "Kar Marjı %": round((net_kar/satis)*100, 2) if satis>0 else 0
                 })
 
         if results:
             final_df = pd.DataFrame(results)
-            st.success("✅ Analiz Tamamlandı! Hepsiburada Komisyonuna %20 KDV eklendi.")
+            st.success("✅ Analiz Tamamlandı! Tüm platformlar aynı sütunlarda birleştirildi.")
+            
+            # Tablo Görünümü
             st.dataframe(final_df, use_container_width=True)
+            
+            # Excel İndirme
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 final_df.to_excel(writer, index=False)
-            st.download_button("📥 Excel İndir", output.getvalue(), "Pazaryeri_Analiz.xlsx")
+            st.download_button("📥 Analizi Excel Olarak İndir", output.getvalue(), "Pazaryeri_Kar_Raporu.xlsx")
