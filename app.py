@@ -9,13 +9,14 @@ st.markdown("Trendyol ve Hepsiburada verilerini maliyetlerinizle saniyeler için
 
 # --- YARDIMCI FONKSİYONLAR ---
 def kargo_hesapla(desi, kargo_df):
-    """30 desi ve üzeri için özel fiyatlandırma kuralı"""
     try:
+        # Kargo tablosu başlık temizliği
+        kargo_df.columns = kargo_df.columns.str.strip()
         if desi <= 30:
             # Tablodaki en yakın büyük veya eşit desiyi bulur
             return kargo_df.loc[kargo_df['DESİ'] >= desi, 'Fiyat'].iloc[0]
         else:
-            # 30+ kuralı: 447.06 + (ek desi * 14.87)
+            # 30+ desi kuralı: 447.06 + ((ek_desi) * 14.87)
             return 447.06 + ((desi - 30) * 14.87)
     except:
         return 0
@@ -25,7 +26,7 @@ with st.sidebar:
     st.header("📂 Dosyaları Yükle")
     tr_file = st.file_uploader("1. Trendyol Ürün Listesi", type=['xlsx'])
     hb_file = st.file_uploader("2. Hepsiburada Ürün Listesi", type=['xlsx'])
-    maliyet_file = st.file_uploader("3. Maliyet Listesi (Barkod, Stok Kodu, Alis_Fiyati, Desi)", type=['xlsx'])
+    maliyet_file = st.file_uploader("3. Maliyet Listesi (Barkod, StokKodu, Ürün Adı, Alış Fiyatı, Desi)", type=['xlsx'])
     kargo_file = st.file_uploader("4. Kargo Fiyat Listesi (DESİ, Fiyat)", type=['xlsx'])
     
     st.divider()
@@ -34,94 +35,101 @@ with st.sidebar:
     hb_tahsilat = st.number_input("HB Tahsilat Bedeli (%)", value=0.8) / 100
 
 # --- ANA HESAPLAMA MOTORU ---
-if st.button("HESAPLAMAYI BAŞLAT ✨"):
+if st.button("ANALİZİ BAŞLAT ✨"):
     if not (tr_file and hb_file and maliyet_file and kargo_file):
-        st.error("Lütfen tüm Excel dosyalarını yüklediğinizden emin olun!")
+        st.error("Lütfen dört Excel dosyasını da yüklediğinizden emin olun!")
     else:
-        # Dosyaları Oku
+        # Excel'leri Oku ve Başlıkları Temizle
         df_tr = pd.read_excel(tr_file)
+        df_tr.columns = df_tr.columns.str.strip()
+        
         df_hb = pd.read_excel(hb_file)
+        df_hb.columns = df_hb.columns.str.strip()
+        
         df_maliyet = pd.read_excel(maliyet_file)
+        df_maliyet.columns = df_maliyet.columns.str.strip()
+        
         df_kargo = pd.read_excel(kargo_file)
+        df_kargo.columns = df_kargo.columns.str.strip()
         
         results = []
         errors = []
 
+        # --- ÜÇLÜ EŞLEŞTİRME FONKSİYONU ---
+        def maliyet_bul(p_barkod, p_stok, p_ad):
+            # 1. Barkod ile ara
+            m = df_maliyet[df_maliyet['Barkod'].astype(str) == str(p_barkod)]
+            if m.empty:
+                # 2. StokKodu ile ara
+                m = df_maliyet[df_maliyet['StokKodu'].astype(str) == str(p_stok)]
+            if m.empty:
+                # 3. Ürün Adı ile ara
+                m = df_maliyet[df_maliyet['Ürün Adı'].astype(str) == str(p_ad)]
+            return m
+
         # --- TRENDYOL İŞLEME ---
         for _, row in df_tr.iterrows():
-            # Barkod veya Stok Kodu ile eşleşme ara
-            match = df_maliyet[(df_maliyet['Barkod'] == row['Barkod']) | 
-                               (df_maliyet['Stok Kodu'] == row['Tedarikçi Stok Kodu'])]
+            match = maliyet_bul(row.get('Barkod'), row.get('Tedarikçi Stok Kodu'), row.get('Ürün Adı'))
             
             if not match.empty:
-                maliyet = match.iloc[0]['Alis_Fiyati']
-                desi = row['Desi']
+                alis = match.iloc[0]['Alış Fiyatı']
+                desi = row.get('Desi', match.iloc[0].get('Desi', 0))
                 kargo_tl = kargo_hesapla(desi, df_kargo)
-                satis = row["Trendyol'da Satılacak Fiyat (KDV Dahil)"]
-                kom_tl = satis * (row['Komisyon Oranı'] / 100)
+                satis = row.get("Trendyol'da Satılacak Fiyat (KDV Dahil)", 0)
+                kom_tl = satis * (row.get('Komisyon Oranı', 0) / 100)
                 
-                net_kar = satis - (maliyet + kom_tl + kargo_tl + sabit_gider)
+                net_kar = satis - (alis + kom_tl + kargo_tl + sabit_gider)
                 results.append({
-                    "Platform": "Trendyol", "Marka": row['Marka'], "Kod": row['Tedarikçi Stok Kodu'],
-                    "Satış": satis, "Maliyet": maliyet, "Kargo": kargo_tl, "Komisyon": kom_tl, "Net Kar": net_kar
+                    "Platform": "Trendyol", "Marka": row.get('Marka', '-'), "Kod": row.get('Tedarikçi Stok Kodu', '-'),
+                    "Ürün": row.get('Ürün Adı', '-'), "Satış": satis, "Maliyet": alis, "Kargo": kargo_tl, "Komisyon": kom_tl, "Net Kar": net_kar
                 })
             else:
-                errors.append({"Platform": "Trendyol", "Kod": row['Tedarikçi Stok Kodu'], "Hata": "Maliyet Bulunamadı"})
+                errors.append({"Platform": "Trendyol", "Kod": row.get('Tedarikçi Stok Kodu', '-'), "İsim": row.get('Ürün Adı', '-'), "Hata": "Eşleşme Bulunamadı"})
 
         # --- HEPSİBURADA İŞLEME ---
         for _, row in df_hb.iterrows():
-            match = df_maliyet[(df_maliyet['Barkod'] == row['Barkod']) | 
-                               (df_maliyet['Stok Kodu'] == row['Satıcı Stok Kodu'])]
+            match = maliyet_bul(row.get('Barkod'), row.get('Satıcı Stok Kodu'), row.get('Ürün Adı'))
             
             if not match.empty:
-                maliyet = match.iloc[0]['Alis_Fiyati']
-                # HB'de desi bilgisi yoksa maliyet listesindeki desiyi kullan
-                desi_val = match.iloc[0]['Desi'] if 'Desi' in match.columns else 0
+                alis = match.iloc[0]['Alış Fiyatı']
+                # HB'de desi bilgisi genelde yoktur, maliyet tablosundan çekiyoruz
+                desi_val = match.iloc[0].get('Desi', 0)
                 kargo_tl = kargo_hesapla(desi_val, df_kargo)
-                satis = row['Fiyat']
-                # HB Özel: Komisyon + KDV (%20) + Tahsilat Bedeli
-                kom_kdvli = (satis * (row['Komisyon Oranı'] / 100)) * 1.20
+                satis = row.get('Fiyat', 0)
+                # HB Özel: (Komisyon + KDV) + Tahsilat Bedeli + Sabit Gider
+                kom_kdvli = (satis * (row.get('Komisyon Oranı', 0) / 100)) * 1.20
                 tahsilat_tl = satis * hb_tahsilat
                 
-                net_kar = satis - (maliyet + kom_kdvli + tahsilat_tl + kargo_tl + sabit_gider)
+                net_kar = satis - (alis + kom_kdvli + tahsilat_tl + kargo_tl + sabit_gider)
                 results.append({
-                    "Platform": "Hepsiburada", "Marka": row['Marka'], "Kod": row['Satıcı Stok Kodu'],
-                    "Satış": satis, "Maliyet": maliyet, "Kargo": kargo_tl, "Komisyon": kom_kdvli, "Net Kar": net_kar
+                    "Platform": "Hepsiburada", "Marka": row.get('Marka', '-'), "Kod": row.get('Satıcı Stok Kodu', '-'),
+                    "Ürün": row.get('Ürün Adı', '-'), "Satış": satis, "Maliyet": alis, "Kargo": kargo_tl, "Komisyon": kom_kdvli, "Net Kar": net_kar
                 })
             else:
-                errors.append({"Platform": "Hepsiburada", "Kod": row['Satıcı Stok Kodu'], "Hata": "Maliyet Bulunamadı"})
+                errors.append({"Platform": "Hepsiburada", "Kod": row.get('Satıcı Stok Kodu', '-'), "İsim": row.get('Ürün Adı', '-'), "Hata": "Eşleşme Bulunamadı"})
 
         # --- SONUÇLARI GÖSTER ---
         if results:
             final_df = pd.DataFrame(results)
             final_df["Kar Marjı %"] = (final_df["Net Kar"] / final_df["Satış"]) * 100
 
-            st.success("Analiz Başarıyla Tamamlandı!")
+            st.success("Hesaplama Başarıyla Tamamlandı!")
             
-            # Üst Panel Özet Rakamlar
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Analiz Edilen Ürün", len(final_df))
-            c2.metric("Ortalama Kar Marjı", f"%{final_df['Kar Marjı %'].mean():.2f}")
-            c3.metric("Toplam Tahmini Net Kar", f"{final_df['Net Kar'].sum():,.2f} TL")
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Toplam Satış Adedi", len(final_df))
+            m2.metric("Ortalama Marj", f"%{final_df['Kar Marjı %'].mean():.2f}")
+            m3.metric("Toplam Net Kar", f"{final_df['Net Kar'].sum():,.2f} TL")
 
-            # Ana Tablo
-            st.dataframe(final_df.style.highlight_max(axis=0, subset=['Net Kar'], color='#90EE90'))
+            st.dataframe(final_df.style.highlight_min(axis=0, subset=['Net Kar'], color='#FFC0CB'))
 
-            # Excel İndirme Alanı
+            # Excel Çıktısı
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                final_df.to_excel(writer, index=False, sheet_name='Kar Analizi')
-            st.download_button(
-                label="📥 Analiz Sonuçlarını Excel Olarak İndir",
-                data=output.getvalue(),
-                file_name="Pazaryeri_Kar_Analiz_Raporu.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+                final_df.to_excel(writer, index=False, sheet_name='Analiz Raporu')
+            st.download_button("📥 Analiz Sonuçlarını İndir", data=output.getvalue(), file_name="Pazaryeri_Kar_Analiz.xlsx")
         else:
-            st.warning("Eşleşen ürün bulunamadı. Lütfen barkodları kontrol edin.")
+            st.warning("Eşleşen ürün bulunamadı. Lütfen Excel dosyalarındaki barkod ve ürün isimlerini kontrol edin.")
 
-        # Hatalı/Eşleşmeyen Ürünler Paneli
         if errors:
-            with st.expander("⚠️ Maliyeti Bulunamayan (Eşleşmeyen) Ürünler"):
-                st.write("Aşağıdaki ürünler maliyet listenizde bulunamadığı için hesaplanamadı:")
+            with st.expander("⚠️ Eşleşmeyen Ürünler Listesi"):
                 st.table(pd.DataFrame(errors))
