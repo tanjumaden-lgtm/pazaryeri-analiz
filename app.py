@@ -16,7 +16,7 @@ st.markdown("""
 
 st.title("📊 Pazaryeri Strateji & Kar Yönetim Merkezi")
 
-# --- 1. MATEMATİKSEL FONKSİYONLAR ---
+# --- 1. MATEMATİKSEL FONKSİYONLAR (HESAP MOTORU) ---
 def to_float(val):
     if pd.isna(val) or val == "": return 0.0
     if isinstance(val, (int, float)): return float(val)
@@ -37,7 +37,7 @@ def kargo_hesapla(desi, kargo_df):
             return 447.06 + ((desi_val - 30) * 14.87)
     except: return 0.0
 
-# --- 2. GİRİŞ PANELİ ---
+# --- 2. GİRİŞ PANELİ (SIDEBAR) ---
 with st.sidebar:
     st.header("📂 Veri Girişi")
     tr_file = st.file_uploader("1. Trendyol Ürün Listesi", type=['xlsx'])
@@ -55,8 +55,8 @@ with st.sidebar:
     st.subheader("🔄 İade Risk Ayarı")
     iade_orani = st.slider("Tahmini İade Oranı (%)", 0, 20, 5)
 
-# --- 3. ANA HESAPLAMA ---
-if st.button("STRATEJİK ANALİZİ BAŞLAT 🚀"):
+# --- 3. ANA HESAPLAMA DÖNGÜSÜ ---
+if st.button("ANALİZİ BAŞLAT ✨"):
     if not (tr_file and hb_file and maliyet_file and kargo_file):
         st.error("Lütfen dört dosyayı da yükleyin!")
     else:
@@ -67,7 +67,7 @@ if st.button("STRATEJİK ANALİZİ BAŞLAT 🚀"):
 
         results = []
 
-        # --- TRENDYOL ---
+        # --- TRENDYOL DÖNGÜSÜ ---
         for _, row in df_tr.iterrows():
             m = df_maliyet[(df_maliyet['Barkod'].astype(str) == str(row.get('Barkod'))) | 
                            (df_maliyet['StokKodu'].astype(str) == str(row.get('Tedarikçi Stok Kodu'))) |
@@ -78,21 +78,25 @@ if st.button("STRATEJİK ANALİZİ BAŞLAT 🚀"):
                 kom_oran = to_float(row.get('Komisyon Oranı', 0))
                 desi = to_float(row.get('Desi', 0))
                 if desi <= 0: desi = to_float(m.iloc[0].get('Desi', 0))
+                
                 kargo_tl = kargo_hesapla(desi, df_kargo)
                 kom_tl = satis * (kom_oran / 100)
                 iade_risk_tl = kargo_tl * (iade_orani / 100)
+                
                 toplam_maliyet = alis + kom_tl + kargo_tl + tr_sabit + iade_risk_tl
                 net_kar = satis - toplam_maliyet
+                
                 results.append({
                     "Platform": "Trendyol", "Marka": row.get('Marka','-'), "Kod": row.get('Tedarikçi Stok Kodu','-'),
                     "Ürün": row.get('Ürün Adı','-'), "Desi": desi, "Satış Fiyatı": satis, "Alış Maliyeti": alis,
                     "Komisyon TL": round(kom_tl, 2), "Gidiş Kargo": round(kargo_tl, 2), "Sabit Gider": tr_sabit,
-                    "İade Karşılığı (TL)": round(iade_risk_tl, 2), "TOPLAM MALİYET": round(toplam_maliyet, 2),
-                    "NET KAR": round(net_kar, 2), "Marj %": round((net_kar/satis)*100, 2) if satis > 0 else 0,
+                    "Tahsilat Bedeli": 0.0, "İade Karşılığı (TL)": round(iade_risk_tl, 2),
+                    "TOPLAM MALİYET": round(toplam_maliyet, 2), "NET KAR": round(net_kar, 2),
+                    "Kar Marjı %": round((net_kar/satis)*100, 2) if satis > 0 else 0,
                     "ROI %": round((net_kar/toplam_maliyet)*100, 2) if toplam_maliyet > 0 else 0
                 })
 
-        # --- HEPSİBURADA ---
+        # --- HEPSİBURADA DÖNGÜSÜ ---
         for _, row in df_hb.iterrows():
             m = df_maliyet[(df_maliyet['Barkod'].astype(str) == str(row.get('Barkod'))) | 
                            (df_maliyet['StokKodu'].astype(str) == str(row.get('Satıcı Stok Kodu'))) |
@@ -102,15 +106,70 @@ if st.button("STRATEJİK ANALİZİ BAŞLAT 🚀"):
                 satis = to_float(row.get('Fiyat', 0))
                 kom_oran = to_float(row.get('Komisyon Oranı', 0))
                 desi = to_float(m.iloc[0].get('Desi', 0))
+                
                 kargo_tl = kargo_hesapla(desi, df_kargo)
                 kom_kdvli_tl = (satis * (kom_oran / 100)) * 1.20 
                 tahsilat_tl = satis * hb_tahsilat_oran
                 iade_risk_tl = (kargo_tl * 2) * (iade_orani / 100) 
+                
                 toplam_maliyet = alis + kom_kdvli_tl + tahsilat_tl + kargo_tl + hb_sabit + iade_risk_tl
                 net_kar = satis - toplam_maliyet
+                
                 results.append({
                     "Platform": "Hepsiburada", "Marka": row.get('Marka','-'), "Kod": row.get('Satıcı Stok Kodu','-'),
                     "Ürün": row.get('Ürün Adı','-'), "Desi": desi, "Satış Fiyatı": satis, "Alış Maliyeti": alis,
-                    "Komisyon TL": round(kom_kdvli_tl, 2), "Tahsilat Bedeli (TL)": round(tahsilat_tl, 2),
-                    "Gidiş Kargo": round(kargo_tl, 2), "Sabit Gider": hb_sabit, "İade Karşılığı (TL)": round(iade_risk_tl, 2),
-                    "TOPLAM MALİYET": round(toplam_maliyet, 2), "NET KAR": rou
+                    "Komisyon TL": round(kom_kdvli_tl, 2), "Gidiş Kargo": round(kargo_tl, 2), "Sabit Gider": hb_sabit,
+                    "Tahsilat Bedeli": round(tahsilat_tl, 2), "İade Karşılığı (TL)": round(iade_risk_tl, 2),
+                    "TOPLAM MALİYET": round(toplam_maliyet, 2), "NET KAR": round(net_kar, 2),
+                    "Kar Marjı %": round((net_kar/satis)*100, 2) if satis > 0 else 0,
+                    "ROI %": round((net_kar/toplam_maliyet)*100, 2) if toplam_maliyet > 0 else 0
+                })
+
+        # --- 4. GÖRSEL ÇIKTI VE DASHBOARD ---
+        if results:
+            final_df = pd.DataFrame(results)
+            st.success("✅ Veriler Başarıyla İşlendi")
+            
+            # Üst Özet Kartları
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Toplam Tahmini Kar", f"{final_df['NET KAR'].sum():,.2f} TL")
+            m2.metric("Ortalama Marj", f"%{final_df['Kar Marjı %'].mean():.2f}")
+            m3.metric("Kritik Ürün (%10 Altı)", len(final_df[final_df['Kar Marjı %'] < 10]))
+            m4.metric("Toplam Satış Hacmi", f"{final_df['Satış Fiyatı'].sum():,.0f} TL")
+
+            # AI STRATEJİ DANIŞMANI
+            st.divider()
+            st.subheader("🤖 Strateji Danışmanı Önerileri")
+            en_karli_marka = final_df.groupby('Marka')['Kar Marjı %'].mean().idxmax()
+            en_cok_kar_plat = final_df.groupby('Platform')['NET KAR'].sum().idxmax()
+            kritik_sayisi = len(final_df[final_df['Kar Marjı %'] < 10])
+
+            with st.expander("📌 Yönetici Özetini ve Tavsiyeleri Oku", expanded=True):
+                c_a, c_b = st.columns(2)
+                with c_a:
+                    st.write(f"🔹 **Karlılık Lideri:** Şu an ürün bazında en yüksek marjı **{en_karli_marka}** markasıyla alıyorsun.")
+                    st.write(f"🔹 **Ciro Kaynağı:** Kasa toplamında en çok net karı **{en_cok_kar_plat}** üzerinden yapıyorsun.")
+                with c_b:
+                    if kritik_sayisi > 0:
+                        st.error(f"⚠️ **Kritik Durum:** {kritik_sayisi} üründe marjın %10'un altında. Bu ürünlerde zarar riski yüksek!")
+                    st.write("💡 **Tavsiye:** Kargo maliyeti yüksek ürünlerde '2'li Paket' kampanyası yaparak lojistik birim maliyetini düşürmeyi dene.")
+
+            # Grafikler
+            st.divider()
+            col1, col2 = st.columns(2)
+            with col1:
+                st.write("### 🏢 Marka Bazlı Kar Dağılımı")
+                st.bar_chart(final_df.groupby('Marka')['NET KAR'].sum())
+            with col2:
+                st.write("### 🌐 Platform Marj Kıyaslaması")
+                st.bar_chart(final_df.groupby('Platform')['Kar Marjı %'].mean())
+
+            # Tablo
+            st.divider()
+            st.subheader("📋 Detaylı Ürün Analiz Tablosu")
+            st.dataframe(final_df.sort_values('NET KAR', ascending=False), use_container_width=True)
+
+            # Excel İndirme
+            output = io.BytesIO()
+            final_df.to_excel(output, index=False)
+            st.download_button("📥 Excel Raporu İndir", output.getvalue(), "Pazaryeri_Stratejik_Rapor.xlsx")
