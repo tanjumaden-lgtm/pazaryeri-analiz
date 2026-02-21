@@ -48,7 +48,7 @@ with st.sidebar:
 # --- HESAPLAMA ---
 if st.button("ANALİZİ BAŞLAT ✨"):
     if not (tr_file and hb_file and maliyet_file and kargo_file):
-        st.error("Lütfen dört dosyayı da yükleyin!")
+        st.error("Lütfen tüm dosyaları yükleyin!")
     else:
         df_tr = pd.read_excel(tr_file); df_tr.columns = df_tr.columns.str.strip()
         df_hb = pd.read_excel(hb_file); df_hb.columns = df_hb.columns.str.strip()
@@ -57,7 +57,7 @@ if st.button("ANALİZİ BAŞLAT ✨"):
 
         results = []
 
-        # --- TRENDYOL ---
+        # --- TRENDYOL İŞLEME ---
         for _, row in df_tr.iterrows():
             m = df_maliyet[(df_maliyet['Barkod'].astype(str) == str(row.get('Barkod'))) | 
                            (df_maliyet['StokKodu'].astype(str) == str(row.get('Tedarikçi Stok Kodu'))) |
@@ -72,17 +72,21 @@ if st.button("ANALİZİ BAŞLAT ✨"):
                 kargo = kargo_hesapla(desi, df_kargo)
                 kom_tl = satis * (kom_oran / 100)
                 iade_risk = kargo * (iade_orani / 100)
-                net_kar = satis - (alis + kom_tl + kargo + tr_sabit + iade_risk)
+                
+                # TOPLAM MALİYET HESABI
+                toplam_maliyet = alis + kom_tl + kargo + tr_sabit + iade_risk
+                net_kar = satis - toplam_maliyet
                 
                 results.append({
                     "Platform": "Trendyol", "Marka": row.get('Marka','-'), "Kod": row.get('Tedarikçi Stok Kodu','-'),
                     "Ürün": row.get('Ürün Adı','-'), "Desi": desi, "Satış Fiyatı": satis, "Alış Maliyeti": alis,
                     "Komisyon %": round(kom_oran, 2), "Komisyon TL": round(kom_tl, 2), "Tahsilat Bedeli (TL)": 0,
                     "Gidiş Kargo": round(kargo, 2), "Sabit Gider": tr_sabit, "İade Karşılığı (TL)": round(iade_risk, 2),
+                    "TOPLAM MALİYET": round(toplam_maliyet, 2),
                     "NET KAR": round(net_kar, 2), "Kar Marjı %": round((net_kar/satis)*100, 2) if satis>0 else 0
                 })
 
-        # --- HEPSİBURADA ---
+        # --- HEPSİBURADA İŞLEME ---
         for _, row in df_hb.iterrows():
             m = df_maliyet[(df_maliyet['Barkod'].astype(str) == str(row.get('Barkod'))) | 
                            (df_maliyet['StokKodu'].astype(str) == str(row.get('Satıcı Stok Kodu'))) |
@@ -97,22 +101,25 @@ if st.button("ANALİZİ BAŞLAT ✨"):
                 desi = to_float(m.iloc[0].get('Desi', 0))
                 kargo = kargo_hesapla(desi, df_kargo)
                 tahsilat = satis * hb_tahsilat_oran
-                iade_risk = (kargo * 2) * (iade_orani / 100) # HB Geliş+Geri Gönderiş
+                iade_risk = (kargo * 2) * (iade_orani / 100)
                 
-                net_kar = satis - (alis + kom_toplam_tl + tahsilat + kargo + hb_sabit + iade_risk)
+                # TOPLAM MALİYET HESABI
+                toplam_maliyet = alis + kom_toplam_tl + tahsilat + kargo + hb_sabit + iade_risk
+                net_kar = satis - toplam_maliyet
                 
                 results.append({
                     "Platform": "Hepsiburada", "Marka": row.get('Marka','-'), "Kod": row.get('Satıcı Stok Kodu','-'),
                     "Ürün": row.get('Ürün Adı','-'), "Desi": desi, "Satış Fiyatı": satis, "Alış Maliyeti": alis,
                     "Komisyon %": round(kom_kdv_dahil_oran, 2), "Komisyon TL": round(kom_toplam_tl, 2), "Tahsilat Bedeli (TL)": round(tahsilat, 2),
                     "Gidiş Kargo": round(kargo, 2), "Sabit Gider": hb_sabit, "İade Karşılığı (TL)": round(iade_risk, 2),
+                    "TOPLAM MALİYET": round(toplam_maliyet, 2),
                     "NET KAR": round(net_kar, 2), "Kar Marjı %": round((net_kar/satis)*100, 2) if satis>0 else 0
                 })
 
         if results:
             final_df = pd.DataFrame(results)
-            st.success("✅ Tüm maliyetler ve iade riskleri tabloda gösterilmiştir.")
+            st.success("✅ Analiz Tamamlandı! Toplam maliyet sütunu eklendi.")
             st.dataframe(final_df, use_container_width=True)
             output = io.BytesIO()
             final_df.to_excel(output, index=False)
-            st.download_button("📥 Tam Raporu Excel İndir", output.getvalue(), "Pazaryeri_Detayli_Analiz.xlsx")
+            st.download_button("📥 Excel Raporu İndir", output.getvalue(), "Kar_Analiz_Raporu.xlsx")
